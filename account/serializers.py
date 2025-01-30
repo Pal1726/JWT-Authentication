@@ -5,6 +5,8 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator 
 from account.utils import Util
 
+from django.contrib.auth import authenticate
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
   	# We are writing this becoz we need confirm password field in our Registratin Request
   	password2 = serializers.CharField(style={'input_type':'password'}, write_only=True)  #we are declaring here because it is not part of user model
@@ -28,10 +30,23 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
   		return User.objects.create_user(**validate_data)
 
 class UserLoginSerializer(serializers.ModelSerializer):
-	email=serializers.EmailField(max_length=255)  #If you don’t have any specific customization for email, you don’t need to declare it explicitly
-	class Meta:
-		model=User
-		fields=['email','password']
+    email = serializers.EmailField(max_length=255)
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['email', 'password']
+
+    def validate(self, data):
+        # This method will only validate the input data, not authenticate the user
+        email = data.get('email')
+        password = data.get('password')
+
+        # Ensure that the required fields are provided
+        if not email or not password:
+            raise serializers.ValidationError({'non_field_errors': ['Both email and password are required.']})
+
+        return data
 
 class UserProfileSerializer(serializers.ModelSerializer):
   class Meta:
