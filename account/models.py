@@ -1,6 +1,7 @@
 
 from django.db import models
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser
+from django.utils.timezone import now
 
 #custom user Manager
 class UserManager(BaseUserManager):
@@ -50,6 +51,12 @@ class User(AbstractBaseUser):
     is_admin = models.BooleanField(default=False)
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now_add=True)
+
+    # Fields for tracking failed login attempts
+    failed_attempts = models.IntegerField(default=0)  # Count failed logins
+    is_blocked = models.BooleanField(default=False)  # Flag to block user
+    last_failed_login = models.DateTimeField(null=True, blank=True)  # Track last failed login time
+
 
     objects = UserManager()
 
