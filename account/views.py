@@ -6,6 +6,13 @@ from django.contrib.auth import authenticate
 from account.renderers import UserRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated,AllowAny
+from django.utils import timezone
+
+from django.utils.timezone import now
+
+from datetime import timedelta
+from account.models import User
+
 # Generate Token Manually
 def get_tokens_for_user(user):
   	refresh = RefreshToken.for_user(user)
@@ -56,20 +63,85 @@ class UserRegistrationView(APIView):
 #             return Response({'msg': 'Registration successful. Please verify your email.'}, status=status.HTTP_201_CREATED)
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# class UserLoginView(APIView):
+# 	# renderer_classes = [UserRenderer]
+# 	def post(self,request,format=None):
+# 		serializer=UserLoginSerializer(data=request.data)
+# 		if serializer.is_valid(raise_exception=True):
+# 			email=serializer.data.get('email')
+# 			password=serializer.data.get('password')
+# 			user=authenticate(email=email,password=password)
+# 			if user is not None:
+# 				token = get_tokens_for_user(user)
+# 				return Response({'token':token,'msg':'login Successful'}, status=status.HTTP_200_OK)
+# 			else:
+# 				return Response({'errors':{'non_field_errors':['email or passwrod is not valid' ]}},status=status.HTTP_404_NOT_FOUND)
+# 		return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)	
+
 class UserLoginView(APIView):
-	# renderer_classes = [UserRenderer]
-	def post(self,request,format=None):
-		serializer=UserLoginSerializer(data=request.data)
-		if serializer.is_valid(raise_exception=True):
-			email=serializer.data.get('email')
-			password=serializer.data.get('password')
-			user=authenticate(email=email,password=password)
-			if user is not None:
-				token = get_tokens_for_user(user)
-				return Response({'token':token,'msg':'login Successful'}, status=status.HTTP_200_OK)
-			else:
-				return Response({'errors':{'non_field_errors':['email or passwrod is not valid' ]}},status=status.HTTP_404_NOT_FOUND)
-		return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)	
+    def post(self, request, format=None):
+        # Print the incoming request data for debugging
+        print("Request data:", request.data)
+
+        # Create an instance of the serializer and validate the data
+        serializer = UserLoginSerializer(data=request.data)
+
+        # Check if serializer is valid and raise exceptions if not
+        if serializer.is_valid(raise_exception=True):
+            email = serializer.validated_data.get('email')
+            password = serializer.validated_data.get('password')
+
+
+            print(f"Trying to authenticate user: {email}")  # Debugging line
+
+            # Authenticate the user using the email and password provided
+            user = authenticate(request=request, email=email, password=password)
+
+            if user:
+                print(f"User authenticated: {user.email}")  # Debugging line
+
+                # Check if the user is blocked, and unblock if 30 minutes have passed since last failed login
+                if user.is_blocked:
+                    if user.last_failed_login and timezone.now() - user.last_failed_login > timedelta(minutes=1):
+                        user.is_blocked = False
+                        user.failed_attempts = 0
+                        user.save()
+
+                if user.is_blocked:
+                    return Response({'errors': {'non_field_errors': ['Your account is blocked due to multiple failed login attempts. Try again later.']}},
+                                    status=status.HTTP_403_FORBIDDEN)
+
+                # Generate token for the authenticated user
+                token = get_tokens_for_user(user)
+
+                # Reset failed login attempts and unblock the user on successful login
+                user.failed_attempts = 0
+                user.is_blocked = False
+                user.save()
+
+                return Response({'token': token, 'msg': 'Login Successful'}, status=status.HTTP_200_OK)
+
+            else:
+                print("Authentication failed.")  # Debugging line
+
+                try:
+                    user = User.objects.get(email=email)
+                    print(f"User exists: {user.email}")  # Debugging line
+                    user.failed_attempts += 1
+                    user.last_failed_login = timezone.now()
+                    if user.failed_attempts >= 3:
+                        user.is_blocked = True
+                    user.save()
+
+                    return Response({'errors': {'non_field_errors': ['Invalid email or password.']}},
+                                    status=status.HTTP_404_NOT_FOUND)
+                except User.DoesNotExist:
+                    print(f"User with email {email} does not exist.")  # Debugging line
+                    return Response({'errors': {'non_field_errors': ['User does not exist. First, register yourself.']}},
+                                    status=status.HTTP_404_NOT_FOUND)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserProfileView(APIView):
 
