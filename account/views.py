@@ -78,6 +78,10 @@ class UserRegistrationView(APIView):
 # 				return Response({'errors':{'non_field_errors':['email or passwrod is not valid' ]}},status=status.HTTP_404_NOT_FOUND)
 # 		return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)	
 
+      
+
+
+
 class UserLoginView(APIView):
     def post(self, request, format=None):
         # Print the incoming request data for debugging
@@ -91,57 +95,60 @@ class UserLoginView(APIView):
             email = serializer.validated_data.get('email')
             password = serializer.validated_data.get('password')
 
+            print(f"Trying to authenticate user: {email}")
 
-            print(f"Trying to authenticate user: {email}")  # Debugging line
+            # Try to get the user by email
+            try:
+                user = User.objects.get(email=email)
 
-            # Authenticate the user using the email and password provided
-            user = authenticate(request=request, email=email, password=password)
-
-            if user:
-                print(f"User authenticated: {user.email}")  # Debugging line
-
-                # Check if the user is blocked, and unblock if 30 minutes have passed since last failed login
+                # Check if user is blocked and if 15 minutes have passed since the last failed login
                 if user.is_blocked:
-                    if user.last_failed_login and timezone.now() - user.last_failed_login > timedelta(minutes=1):
+                    # If more than 15 minutes have passed, unblock the user and reset failed attempts
+                    if user.last_failed_login and timezone.now() - user.last_failed_login > timedelta(minutes=15):
                         user.is_blocked = False
                         user.failed_attempts = 0
                         user.save()
+                    else:
+                        return Response({'errors': {'non_field_errors': ['Your account is blocked due to multiple failed login attempts. Try again later.']}},
+                                        status=status.HTTP_403_FORBIDDEN)
 
-                if user.is_blocked:
-                    return Response({'errors': {'non_field_errors': ['Your account is blocked due to multiple failed login attempts. Try again later.']}},
-                                    status=status.HTTP_403_FORBIDDEN)
+                # Authenticate the user using the email and password provided
+                user_authenticated = authenticate(request=request, email=email, password=password)
+                print('give me details',user_authenticated)
 
-                # Generate token for the authenticated user
-                token = get_tokens_for_user(user)
+                if user_authenticated:
+                    print(f"User authenticated: {user.email}")  
 
-                # Reset failed login attempts and unblock the user on successful login
-                user.failed_attempts = 0
-                user.is_blocked = False
-                user.save()
+                    # Reset failed login attempts and unblock the user on successful login
+                    user.failed_attempts = 0
+                    user.is_blocked = False
+                    user.save()
 
-                return Response({'token': token, 'msg': 'Login Successful'}, status=status.HTTP_200_OK)
+                    # Generate token for the authenticated user
+                    token = get_tokens_for_user(user)
 
-            else:
-                print("Authentication failed.")  # Debugging line
+                    return Response({'token': token, 'msg': 'Login Successful'}, status=status.HTTP_200_OK)
 
-                try:
-                    user = User.objects.get(email=email)
-                    print(f"User exists: {user.email}")  # Debugging line
+                else:
+                    print("Authentication failed.")  
+
+                    # If authentication fails, increment failed attempts and block user if needed
                     user.failed_attempts += 1
                     user.last_failed_login = timezone.now()
+
                     if user.failed_attempts >= 3:
                         user.is_blocked = True
                     user.save()
 
                     return Response({'errors': {'non_field_errors': ['Invalid email or password.']}},
                                     status=status.HTTP_404_NOT_FOUND)
-                except User.DoesNotExist:
-                    print(f"User with email {email} does not exist.")  # Debugging line
-                    return Response({'errors': {'non_field_errors': ['User does not exist. First, register yourself.']}},
-                                    status=status.HTTP_404_NOT_FOUND)
+
+            except User.DoesNotExist:
+                print(f"User with email {email} does not exist.")  
+                return Response({'errors': {'non_field_errors': ['User does not exist. First, register yourself.']}},
+                                status=status.HTTP_404_NOT_FOUND)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class UserProfileView(APIView):
 
