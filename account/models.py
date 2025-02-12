@@ -5,7 +5,7 @@ from django.utils.timezone import now
 
 #custom user Manager
 class UserManager(BaseUserManager):
-    def create_user(self, email, name,tc, password=None,password2=None):
+    def create_user(self, email, name,tc, password=None,password2=None,role="user"):
         """
         Creates and saves a User with the given email, name,tc
         and password.
@@ -17,6 +17,7 @@ class UserManager(BaseUserManager):
             email=self.normalize_email(email),
             name=name,
             tc=tc,
+            role=role
         )
 
         user.set_password(password)
@@ -33,13 +34,20 @@ class UserManager(BaseUserManager):
             password=password,
             name=name,
             tc=tc,
+            role="admin"
         )
+        
         user.is_admin = True
         user.save(using=self._db)
         return user
 
 #custom user model
 class User(AbstractBaseUser):
+    ROLE_CHOICES = (
+        ('admin', 'Admin'),
+        ('user', 'User'),
+    )
+
     email = models.EmailField(
         verbose_name="Email",
         max_length=255,
@@ -47,6 +55,7 @@ class User(AbstractBaseUser):
     )
     name=models.CharField(max_length=200)
     tc=models.BooleanField()
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='user') 
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
     created_at=models.DateTimeField(auto_now_add=True)
