@@ -7,6 +7,7 @@ from account.renderers import UserRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from django.utils import timezone
+from account.permissions import IsAdmin, IsUser
 
 from django.utils.timezone import now
 
@@ -35,6 +36,7 @@ class CustomTokenRefreshView(APIView):
             return Response({'error': 'Refresh token is required'}, status=400)
 
         try:
+            print(f"Received Token: {refresh_token}")
             refresh = RefreshToken(refresh_token)
             new_access_token = str(refresh.access_token)
             return Response({'access': new_access_token})
@@ -43,17 +45,23 @@ class CustomTokenRefreshView(APIView):
             return Response({'error': 'Invalid refresh token'}, status=400)
 
 # Create your views here
-class UserRegistrationView(APIView):
-	# renderer_classes = [UserRenderer]
-	def post(self,request,format=None):
-		serializer=UserRegistrationSerializer(data=request.data)
-		if serializer.is_valid(raise_exception=True):
-			user=serializer.save()
-			token = get_tokens_for_user(user)	
-			return Response({'token':token,'msg':'Registration Successful'},
-			status=status.HTTP_201_CREATED)
 
-		return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+
+class UserRegistrationView(APIView):
+    # renderer_classes = [UserRenderer]
+    def post(self, request, format=None):
+        serializer = UserRegistrationSerializer(data=request.data)
+        print(serializer)
+        if serializer.is_valid(raise_exception=True):
+            user = serializer.save()
+            print("user", user)
+
+            token = get_tokens_for_user(user)    
+            return Response({'token': token, 'msg': 'Registration Successful'},
+                            status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 # class UserRegistrationView(APIView):
 #     def post(self, request, format=None):
@@ -82,6 +90,7 @@ class UserRegistrationView(APIView):
 
 
 
+
 class UserLoginView(APIView):
     def post(self, request, format=None):
         # Print the incoming request data for debugging
@@ -89,6 +98,7 @@ class UserLoginView(APIView):
 
         # Create an instance of the serializer and validate the data
         serializer = UserLoginSerializer(data=request.data)
+        print(serializer)
 
         # Check if serializer is valid and raise exceptions if not
         if serializer.is_valid(raise_exception=True):
@@ -149,14 +159,16 @@ class UserLoginView(APIView):
                                 status=status.HTTP_404_NOT_FOUND)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class UserProfileView(APIView):
+    # renderer_classes = [UserRenderer]
+    permission_classes = [IsAuthenticated]
 
-  	# renderer_classes = [UserRenderer]
-  	permission_classes = [IsAuthenticated]
-  	def get(self, request, format=None):
-  		serializer = UserProfileSerializer(request.user)
-  		return Response(serializer.data, status=status.HTTP_200_OK)
+    def get(self, request, format=None):
+        serializer = UserProfileSerializer(request.user)
+        print(serializer)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class UserChangePasswordView(APIView):
   	# renderer_classes = [UserRenderer]
@@ -181,3 +193,51 @@ class UserPasswordResetView(APIView):
   		serializer = UserPasswordResetSerializer(data=request.data, context={'uid':uid, 'token':token})
   		serializer.is_valid(raise_exception=True)
   		return Response({'msg':'Password Reset Successfully'}, status=status.HTTP_200_OK)
+
+
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]  # Only logged-in users can access this
+
+    def post(self, request):
+        try:
+            # Extract email from request data
+            email = request.data.get("email")
+            refresh_token = request.data.get("refresh_token")  # Extract refresh token correctly
+
+            if not email or not refresh_token:
+                return Response({"error": "Email and Refresh token are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check if the user exists
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            # Blacklist the refresh token
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()  # Attempt to blacklist
+
+            except TokenError:  # Handle already expired/invalid tokens
+                return Response({"error": "Invalid or expired refresh token"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({"msg": "Logout successful"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": "Something went wrong", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminOnlyView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]  # Only Admins
+
+    def get(self, request):
+        users = User.objects.all().values('id', 'email', 'name', 'role')
+        return Response({"users": users}, status=status.HTTP_200_OK)
+
+class UserOnlyView(APIView):
+    permission_classes = [IsAuthenticated, IsUser]  # Only Normal Users
+
+    def get(self, request):
+        return Response({"message": "Welcome, User!"}, status=status.HTTP_200_OK)
