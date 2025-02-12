@@ -12,7 +12,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
   	password2 = serializers.CharField(style={'input_type':'password'}, write_only=True)  #we are declaring here because it is not part of user model
   	class Meta:
   	  model = User
-  	  fields=['email', 'name', 'password', 'password2', 'tc']
+  	  fields=['email', 'name', 'password', 'password2', 'tc','role']
   	  extra_kwargs={
   	    'password':{'write_only':True}
   	  }
@@ -26,8 +26,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
   	    raise serializers.ValidationError("Password and Confirm Password doesn't match")
   	  return attrs
 	
-  	def create(self, validate_data):
-  		return User.objects.create_user(**validate_data)
+  	def create(self, validated_data):
+  		validated_data.pop('password2')  # Remove password2 as it's not in the model
+  		role = validated_data.get('role', 'user')  # Default to 'user' if role not provided
+  		user = User.objects.create_user(**validated_data)
+  		user.role = role  # Assign role
+  		user.save()
+  		return user
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=255)
